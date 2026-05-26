@@ -16,15 +16,16 @@ O nosso projeto tem o foco na utilização de tecnologias espaciais e análise d
 
 </div>
 
+---
 
-A proposta consiste em uma plataforma inteligente capaz de:
+#### A proposta consiste em uma plataforma inteligente capaz de:
 
 * monitorar dados climáticos e geoespaciais;
 * identificar padrões de risco;
 * prever possíveis enchentes urbanas;
 * gerar visualizações estratégicas e alertas preventivos.
 
-O projeto combina:
+#### O projeto combina:
 
 * **dados espaciais**;
 * **Machine Learning**;
