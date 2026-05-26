@@ -6,14 +6,6 @@
 
 Sistema preditivo de enchentes urbanas utilizando **Data Science**, **Inteligência Artificial** e **dados espaciais** para gerar alertas preventivos e apoiar decisões estratégicas em tempo real.
 
-![Python](https://img.shields.io/badge/Python-Data%20Science-blue?style=for-the-badge\&logo=python)
-![Machine Learning](https://img.shields.io/badge/Machine-Learning-orange?style=for-the-badge)
-![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-red?style=for-the-badge\&logo=streamlit)
-![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-success?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-
-</div>
-
 ---
 
 # 📌 Sobre o Projeto
