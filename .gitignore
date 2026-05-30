@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# baguio pra ignorar (arquvios, etc)
+dados_clima_bruto.csv
