@@ -18,7 +18,7 @@ url_base = 'https://api.open-meteo.com/v1/forecast'
 parametros = {
     'hourly': 'temperature_2m,relative_humidity_2m,precipitation',
     'timezone': 'America/Sao_Paulo',
-    'past_days': 7
+    'past_days': 31 # alteravel dps
 }
 
 
