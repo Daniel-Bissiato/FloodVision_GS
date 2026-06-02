@@ -189,4 +189,10 @@ Sinta-se à vontade para contribuir com melhorias, sugestões ou novas funcional
 
 ## 📬 Contato
 
-Caso queira trocar ideias sobre o projeto ou compartilhar feedback, fique à vontade para entrar em contato.
+Caso queira trocar ideias sobre o projeto ou compartilhar feedback, sinta-se à vontade para nos encontrar no LinkedIn:
+
+* [Daniel Bissiato](https://www.linkedin.com/in/daniel-bissiato-b13a14344/)
+
+* [Vinícius Barreto](https://www.linkedin.com/in/vin%C3%ADciusbarreto/)
+
+* [Miguel Calabrez](https://www.linkedin.com/in/miguel-calabrez/)
