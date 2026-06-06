@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 import folium
 from streamlit_folium import st_folium
 from datetime import datetime
-
+from anthropic import Anthropic
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
@@ -17,7 +17,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
+client = Anthropic(
+    api_key=st.secrets["ANTHROPIC_API_KEY"]
+)
 # ─────────────────────────────────────────────
 # ESTILOS
 # ─────────────────────────────────────────────
@@ -297,12 +299,13 @@ st.markdown("---")
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🌍  Mapa Orbital",
-    "📈  Séries Temporais",
-    "🛰️  Índice NDWI",
-    "🤖  Predição IA",
-    "🚨  Central de Alertas",
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🌍 Mapa Orbital",
+    "📈 Séries Temporais",
+    "🛰️ Índice NDWI",
+    "🤖 Predição IA",
+    "🚨 Central de Alertas",
+    "💬 ChatBot"
 ])
 
 
@@ -839,3 +842,141 @@ with tab5:
                 </div>
             </div>
             """, unsafe_allow_html=True)
+# ══════════════════════════════════════════════
+# TAB 6 — FLOODVISION COPILOT
+# ══════════════════════════════════════════════
+
+with tab6:
+
+    st.subheader("💬 FloodVision Copilot")
+
+    st.markdown("""
+    Converse com os dados do sistema.
+
+    Exemplos:
+
+    • Qual cidade teve mais chuva?
+    • Qual o risco atual de Guarulhos?
+    • Qual cidade apresenta maior NDWI?
+    • Quantos registros críticos existem?
+    • Qual a temperatura média do período?
+    """)
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    pergunta = st.chat_input(
+        "Faça uma pergunta sobre os dados..."
+    )
+
+    if pergunta:
+
+        st.session_state.chat_history.append(
+            {
+                "role": "user",
+                "content": pergunta
+            }
+        )
+
+        with st.chat_message("user"):
+            st.markdown(pergunta)
+
+        resumo_cidades = (
+            df.sort_values("data_hora")
+              .groupby("cidade")
+              .last()
+              .reset_index()
+        )
+
+        cidade_mais_chuva = (
+            df.groupby("cidade")["precipitacao_24h"]
+              .max()
+              .sort_values(ascending=False)
+        )
+
+        ndwi_medio = (
+            df.groupby("cidade")["ndwi"]
+              .mean()
+              .round(4)
+        )
+
+        distribuicao_risco = (
+            df["risco"]
+            .value_counts()
+            .to_dict()
+        )
+
+        contexto = f"""
+        TOTAL DE REGISTROS:
+        {len(df)}
+
+        MAIOR CHUVA POR CIDADE:
+        {cidade_mais_chuva.to_string()}
+
+        NDWI MÉDIO:
+        {ndwi_medio.to_string()}
+
+        DISTRIBUIÇÃO DE RISCO:
+        {distribuicao_risco}
+
+        ÚLTIMO STATUS DAS CIDADES:
+
+        {resumo_cidades[['cidade',
+                          'temperatura',
+                          'umidade',
+                          'precipitacao_24h',
+                          'precipitacao_48h',
+                          'ndwi',
+                          'risco']].to_string(index=False)}
+        """
+
+        try:
+
+            resposta = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""
+Você é o Chatbot do FloodVision.
+
+Especialista em:
+
+- meteorologia
+- enchentes
+- NDWI
+- monitoramento orbital
+- gestão de riscos
+
+Responda SOMENTE usando os dados fornecidos.
+
+{contexto}
+
+Pergunta:
+
+{pergunta}
+"""
+                    }
+                ]
+            )
+
+            texto = resposta.content[0].text
+
+        except Exception as e:
+
+            texto = f"Erro ao consultar Claude: {e}"
+
+        with st.chat_message("assistant"):
+            st.markdown(texto)
+
+        st.session_state.chat_history.append(
+            {
+                "role": "assistant",
+                "content": texto
+            }
+        )
