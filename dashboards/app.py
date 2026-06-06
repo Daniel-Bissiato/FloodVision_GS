@@ -43,19 +43,35 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stTabs [aria-selected="true"] { background-color: #1a3a5c !important; color: #60b8ff !important; }
 .main-title { font-family: 'Space Mono', monospace; font-size: 2rem; font-weight: 700; color: #60b8ff; letter-spacing: -0.02em; margin-bottom: 0; }
 .sub-title { color: #4a7fa0; font-size: 0.9rem; letter-spacing: 0.05em; margin-top: 4px; }
+.ndwi-card { border-radius: 12px; padding: 16px 20px; margin: 8px 0; border-left: 4px solid; background: #091a2a; border-color: #0ea5e9; color: #7dd3fc; }
 hr { border-color: #1e2d4a; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
-# CARREGAMENTO DOS DADOS REAIS
+# CARREGAMENTO DOS DADOS
 # ─────────────────────────────────────────────
 @st.cache_data
 def carregar_dados():
-    df = pd.read_csv("data/dados_clima_tratados.csv", parse_dates=["data_hora"])
+    df = pd.read_csv("data/previsoes_ml.csv", parse_dates=["data_hora"])
     df["data"] = df["data_hora"].dt.date
+    df["hora_dia"] = df["data_hora"].dt.hour
+    df["dia_semana"] = df["data_hora"].dt.dayofweek
     df["cidade_label"] = df["cidade"].str.replace("_", " ")
+    # Compatibilidade: renomeia risco_previsto → risco se necessário
+    if "risco_previsto" in df.columns and "risco" not in df.columns:
+        df = df.rename(columns={"risco_previsto": "risco"})
+    # Cria coluna chovendo se não existir
+    if "chovendo" not in df.columns:
+        df["chovendo"] = (df["precipitacao"] > 0).astype(int)
+    # Cria precipitacao_48h se não existir (rolling 48h a partir da 24h)
+    if "precipitacao_48h" not in df.columns:
+        df = df.sort_values(["cidade", "data_hora"])
+        df["precipitacao_48h"] = (
+            df.groupby("cidade")["precipitacao"]
+            .transform(lambda x: x.rolling(48, min_periods=1).sum())
+        )
     return df
 
 @st.cache_data
@@ -65,6 +81,16 @@ def coordenadas_cidades():
         "Guarulhos":   {"lat": -23.4543, "lon": -46.5333, "label": "Guarulhos"},
         "Santo_Andre": {"lat": -23.6618, "lon": -46.5289, "label": "Santo André"},
     }
+
+def classificar_ndwi(val):
+    if val >= 0.2:
+        return "Água/Enchente", "#ef4444"
+    elif val >= 0.0:
+        return "Úmido", "#f97316"
+    elif val >= -0.1:
+        return "Transição", "#eab308"
+    else:
+        return "Seco/Vegetação", "#22c55e"
 
 
 # ─────────────────────────────────────────────
@@ -92,12 +118,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### 🌡️ Limiar de Alerta")
-    limiar_chuva = st.slider("Precipitação crítica 24h (mm)", 0, 100, 20)
+    limiar_chuva   = st.slider("Precipitação crítica 24h (mm)", 0, 100, 20)
     limiar_umidade = st.slider("Umidade crítica (%)", 50, 100, 85)
 
     st.markdown("---")
     st.success("📡 **DADOS REAIS**\nINPE via OpenWeather\nSão Paulo · Guarulhos · Santo André")
-    st.caption("FloodVision v1.0 · FIAP Global Solution 2025")
+    st.caption("FloodVision v2.0 · FIAP Global Solution 2025")
 
 
 # ─────────────────────────────────────────────
@@ -136,16 +162,16 @@ st.markdown("---")
 total_registros  = len(df)
 dias_chuva       = int(df[df["chovendo"] == 1]["data"].nunique())
 chuva_max_24h    = df["precipitacao_24h"].max()
-temp_media        = df["temperatura"].mean()
-umidade_media     = df["umidade"].mean()
-dias_risco_medio  = int((df["risco"] == "Médio").sum())
+temp_media       = df["temperatura"].mean()
+umidade_media    = df["umidade"].mean()
+dias_risco_medio = int((df["risco"] == "Médio").sum())
 
 m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("📋 Registros",         f"{total_registros:,}",          f"{df['cidade'].nunique()} cidades")
-m2.metric("🌧️ Dias com Chuva",   f"{dias_chuva}",                  "no período")
-m3.metric("💧 Chuva Máx 24h",    f"{chuva_max_24h:.1f} mm",        "pico registrado")
-m4.metric("🌡️ Temp. Média",      f"{temp_media:.1f} °C",           "média do período")
-m5.metric("⚠️ Alertas Médio",    f"{dias_risco_medio}",             "registros de risco")
+m1.metric("📋 Registros",       f"{total_registros:,}",     f"{df['cidade'].nunique()} cidades")
+m2.metric("🌧️ Dias com Chuva", f"{dias_chuva}",             "no período")
+m3.metric("💧 Chuva Máx 24h",  f"{chuva_max_24h:.1f} mm",  "pico registrado")
+m4.metric("🌡️ Temp. Média",    f"{temp_media:.1f} °C",      "média do período")
+m5.metric("⚠️ Alertas Médio",  f"{dias_risco_medio}",        "registros de risco")
 
 st.markdown("---")
 
@@ -153,9 +179,10 @@ st.markdown("---")
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🗺️  Mapa de Risco",
     "📈  Séries Temporais",
+    "🛰️  Índice NDWI",
     "🤖  Predição IA",
     "🚨  Central de Alertas",
 ])
@@ -168,17 +195,14 @@ with tab1:
     st.subheader("Mapa de Risco — Grande São Paulo")
 
     coords = coordenadas_cidades()
-
-    # Calcula risco atual por cidade (último registro disponível)
     resumo_cidade = (
         df.sort_values("data_hora")
           .groupby("cidade")
           .last()
-          .reset_index()[["cidade", "temperatura", "umidade", "precipitacao_24h", "precipitacao_48h", "risco"]]
+          .reset_index()[["cidade", "temperatura", "umidade", "precipitacao_24h", "precipitacao_48h", "risco", "ndwi"]]
     )
 
     col_mapa, col_painel = st.columns([2, 1])
-
     COR_RISCO = {"Crítico": "#ef4444", "Alto": "#f97316", "Médio": "#eab308", "Baixo": "#22c55e"}
 
     with col_mapa:
@@ -188,8 +212,9 @@ with tab1:
             cidade_key = row["cidade"]
             if cidade_key not in coords:
                 continue
-            cor = COR_RISCO.get(row["risco"], "#94a3b8")
+            cor   = COR_RISCO.get(row["risco"], "#94a3b8")
             label = coords[cidade_key]["label"]
+            ndwi_class, _ = classificar_ndwi(row["ndwi"])
 
             folium.CircleMarker(
                 location=[coords[cidade_key]["lat"], coords[cidade_key]["lon"]],
@@ -201,8 +226,8 @@ with tab1:
                     Temp: {row['temperatura']:.1f} °C<br>
                     Umidade: {row['umidade']:.0f}%<br>
                     Chuva 24h: {row['precipitacao_24h']:.1f} mm<br>
-                    Chuva 48h: {row['precipitacao_48h']:.1f} mm
-                """, max_width=200),
+                    NDWI: {row['ndwi']:.3f} ({ndwi_class})
+                """, max_width=220),
                 tooltip=f"{label} — {row['risco']}",
             ).add_to(m)
 
@@ -225,15 +250,17 @@ with tab1:
             cidade_key = row["cidade"]
             if cidade_key not in coords:
                 continue
-            label = coords[cidade_key]["label"]
+            label  = coords[cidade_key]["label"]
             classe = {"Crítico": "alert-vermelho", "Alto": "alert-laranja",
                       "Médio": "alert-amarelo", "Baixo": "alert-verde"}.get(row["risco"], "alert-verde")
             emoji  = {"Crítico": "🔴", "Alto": "🟠", "Médio": "🟡", "Baixo": "🟢"}.get(row["risco"], "⚪")
+            ndwi_class, ndwi_cor = classificar_ndwi(row["ndwi"])
             st.markdown(f"""
             <div class="alert-card {classe}">
                 <b>{emoji} {label}</b><br>
                 <small>🌡 {row['temperatura']:.1f}°C &nbsp;|&nbsp; 💧 {row['umidade']:.0f}%</small><br>
-                <small>🌧 24h: {row['precipitacao_24h']:.1f}mm &nbsp;|&nbsp; 48h: {row['precipitacao_48h']:.1f}mm</small>
+                <small>🌧 24h: {row['precipitacao_24h']:.1f}mm</small><br>
+                <small>🛰 NDWI: <span style="color:{ndwi_cor}">{row['ndwi']:.3f} ({ndwi_class})</span></small>
             </div>
             """, unsafe_allow_html=True)
 
@@ -254,7 +281,6 @@ with tab1:
 with tab2:
     st.subheader("Análise Temporal — Dados Horários")
 
-    # Agrega por dia para visualização
     df_diario = (
         df.groupby(["data", "cidade_label"])
           .agg(
@@ -326,7 +352,7 @@ with tab2:
         fig_umid.update_yaxes(gridcolor="#1e2d4a")
         st.plotly_chart(fig_umid, use_container_width=True)
 
-    # Heatmap hora × dia da semana (precipitação)
+    # Heatmap hora × dia da semana
     st.markdown("#### 🔥 Mapa de Calor — Precipitação por Hora e Dia da Semana")
     dias_nome = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
     heatmap_data = (
@@ -353,30 +379,210 @@ with tab2:
 
 
 # ══════════════════════════════════════════════
-# TAB 3 — PREDIÇÃO IA
+# TAB 3 — NDWI
 # ══════════════════════════════════════════════
 with tab3:
+    st.subheader("🛰️ Índice NDWI — Monitoramento de Umidade do Solo")
+
+    # Explicação do índice
+    st.markdown("""
+    <div class="ndwi-card">
+        <b>O que é o NDWI?</b><br>
+        O <b>Normalized Difference Water Index (NDWI)</b> é calculado a partir de imagens de satélite
+        e indica a presença de água na superfície e umidade do solo.
+        Valores próximos de <b>+1</b> indicam corpos d'água ou enchentes; valores negativos indicam solo seco ou vegetação densa.
+        <br><br>
+        <b>Faixas:</b>
+        &nbsp;<span style="color:#ef4444">■</span> ≥ 0,2 Água/Enchente
+        &nbsp;<span style="color:#f97316">■</span> 0 a 0,2 Úmido
+        &nbsp;<span style="color:#eab308">■</span> -0,1 a 0 Transição
+        &nbsp;<span style="color:#22c55e">■</span> < -0,1 Seco/Vegetação
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── Métricas NDWI por cidade ──────────────────────────────────────────
+    st.markdown("#### 📊 NDWI Atual por Cidade")
+    resumo_ndwi = (
+        df.sort_values("data_hora")
+          .groupby("cidade")
+          .last()
+          .reset_index()[["cidade", "ndwi"]]
+    )
+    coords = coordenadas_cidades()
+    cols_ndwi = st.columns(len(resumo_ndwi))
+    for i, (_, row) in enumerate(resumo_ndwi.iterrows()):
+        label = coords.get(row["cidade"], {}).get("label", row["cidade"])
+        classe, cor = classificar_ndwi(row["ndwi"])
+        with cols_ndwi[i]:
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0d1b2e,#122040);
+                        border:1px solid {cor}; border-radius:12px;
+                        padding:20px; text-align:center;">
+                <div style="color:{cor}; font-family:'Space Mono',monospace; font-size:1.8rem; font-weight:700;">
+                    {row['ndwi']:.4f}
+                </div>
+                <div style="color:#94a3b8; font-size:0.8rem; margin-top:4px;">{label}</div>
+                <div style="color:{cor}; font-size:0.85rem; margin-top:4px; font-weight:600;">{classe}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── Série temporal NDWI ───────────────────────────────────────────────
+    st.markdown("#### 📈 Evolução Temporal do NDWI")
+
+    df_ndwi_diario = (
+        df.groupby(["data", "cidade_label"])["ndwi"]
+          .mean()
+          .reset_index()
+    )
+
+    cor_cidades = {
+        "Sao Paulo":   "#60b8ff",
+        "Guarulhos":   "#a78bfa",
+        "Santo Andre": "#22c55e",
+    }
+
+    fig_ndwi_ts = px.line(
+        df_ndwi_diario, x="data", y="ndwi", color="cidade_label",
+        color_discrete_map=cor_cidades,
+        labels={"ndwi": "NDWI Médio Diário", "data": "", "cidade_label": "Cidade"},
+        title="NDWI Médio Diário por Cidade",
+    )
+    # Linhas de referência das faixas
+    fig_ndwi_ts.add_hline(y=0.2,  line_dash="dot", line_color="#ef4444", line_width=1,
+                          annotation_text="Limiar Água (0.2)",  annotation_position="bottom right")
+    fig_ndwi_ts.add_hline(y=0.0,  line_dash="dot", line_color="#f97316", line_width=1,
+                          annotation_text="Úmido (0.0)",        annotation_position="bottom right")
+    fig_ndwi_ts.add_hline(y=-0.1, line_dash="dot", line_color="#eab308", line_width=1,
+                          annotation_text="Transição (-0.1)",   annotation_position="bottom right")
+    fig_ndwi_ts.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,20,36,0.8)",
+        font=dict(color="#94a3b8"), height=320, margin=dict(l=0, r=0, t=40, b=0),
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
+    )
+    fig_ndwi_ts.update_xaxes(gridcolor="#1e2d4a")
+    fig_ndwi_ts.update_yaxes(gridcolor="#1e2d4a")
+    st.plotly_chart(fig_ndwi_ts, use_container_width=True)
+
+    # ── NDWI vs Precipitação (scatter) ───────────────────────────────────
+    col_scatter, col_dist = st.columns(2)
+
+    with col_scatter:
+        st.markdown("#### 🔵 NDWI × Precipitação 24h")
+        fig_scatter = px.scatter(
+            df.sample(min(2000, len(df))),  # amostra para performance
+            x="precipitacao_24h", y="ndwi",
+            color="cidade_label",
+            color_discrete_map=cor_cidades,
+            opacity=0.6,
+            labels={
+                "precipitacao_24h": "Precipitação 24h (mm)",
+                "ndwi": "NDWI",
+                "cidade_label": "Cidade",
+            },
+            title="Correlação NDWI × Precipitação",
+        )
+        fig_scatter.add_hline(y=0.0,  line_dash="dash", line_color="#f97316", line_width=1)
+        fig_scatter.add_hline(y=0.2,  line_dash="dash", line_color="#ef4444", line_width=1)
+        fig_scatter.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,20,36,0.8)",
+            font=dict(color="#94a3b8"), height=320, margin=dict(l=0, r=0, t=40, b=0),
+            legend=dict(bgcolor="rgba(0,0,0,0)"),
+        )
+        fig_scatter.update_xaxes(gridcolor="#1e2d4a")
+        fig_scatter.update_yaxes(gridcolor="#1e2d4a")
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    with col_dist:
+        st.markdown("#### 📊 Distribuição NDWI por Cidade")
+        fig_box = px.box(
+            df, x="cidade_label", y="ndwi",
+            color="cidade_label",
+            color_discrete_map=cor_cidades,
+            labels={"cidade_label": "Cidade", "ndwi": "NDWI"},
+            title="Distribuição dos Valores NDWI",
+        )
+        fig_box.add_hline(y=0.0,  line_dash="dash", line_color="#f97316", line_width=1)
+        fig_box.add_hline(y=0.2,  line_dash="dash", line_color="#ef4444", line_width=1)
+        fig_box.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,20,36,0.8)",
+            font=dict(color="#94a3b8"), height=320, margin=dict(l=0, r=0, t=40, b=0),
+            showlegend=False,
+        )
+        fig_box.update_xaxes(gridcolor="#1e2d4a")
+        fig_box.update_yaxes(gridcolor="#1e2d4a")
+        st.plotly_chart(fig_box, use_container_width=True)
+
+    # ── Heatmap NDWI hora × cidade ────────────────────────────────────────
+    st.markdown("#### 🔥 Mapa de Calor — NDWI por Hora do Dia")
+    heatmap_ndwi = (
+        df.groupby(["cidade_label", "hora_dia"])["ndwi"]
+          .mean()
+          .reset_index()
+          .pivot(index="cidade_label", columns="hora_dia", values="ndwi")
+          .fillna(0)
+    )
+    fig_heat_ndwi = px.imshow(
+        heatmap_ndwi,
+        color_continuous_scale="RdYlGn_r",
+        zmin=-0.5, zmax=0.5,
+        labels=dict(x="Hora do Dia", y="Cidade", color="NDWI"),
+        title="NDWI Médio por Hora do Dia × Cidade",
+        aspect="auto",
+    )
+    fig_heat_ndwi.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,20,36,0.8)",
+        font=dict(color="#94a3b8"), height=260, margin=dict(l=0, r=0, t=40, b=0),
+    )
+    st.plotly_chart(fig_heat_ndwi, use_container_width=True)
+
+    # ── Tabela de estatísticas NDWI ───────────────────────────────────────
+    st.markdown("#### 📋 Estatísticas NDWI por Cidade")
+    stats_ndwi = (
+        df.groupby("cidade_label")["ndwi"]
+          .agg(["min", "max", "mean", "std"])
+          .round(4)
+          .reset_index()
+    )
+    stats_ndwi.columns = ["Cidade", "Mínimo", "Máximo", "Média", "Desvio Padrão"]
+    stats_ndwi["Classificação Média"] = stats_ndwi["Média"].apply(
+        lambda v: classificar_ndwi(v)[0]
+    )
+    st.dataframe(
+        stats_ndwi,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ══════════════════════════════════════════════
+# TAB 4 — PREDIÇÃO IA
+# ══════════════════════════════════════════════
+with tab4:
     st.subheader("🤖 Predição de Risco — Modelo IA")
     st.info(
         "**Placeholder do modelo ML.** "
         "Substitua `prever_risco()` pelo modelo Random Forest treinado com Scikit-Learn "
-        "quando estiver pronto. A estrutura de entrada/saída já está preparada."
+        "quando estiver pronto."
     )
 
     st.markdown("#### Simule um cenário")
-    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a, col_b, col_c, col_d, col_e = st.columns(5)
     chuva_24h  = col_a.number_input("🌧️ Chuva 24h (mm)",  0.0, 200.0, float(df["precipitacao_24h"].mean()), step=1.0)
     chuva_48h  = col_b.number_input("🌧️ Chuva 48h (mm)",  0.0, 200.0, float(df["precipitacao_48h"].mean()), step=1.0)
-    umidade    = col_c.number_input("💧 Umidade (%)",       0.0, 100.0, float(df["umidade"].mean()),         step=1.0)
-    temp       = col_d.number_input("🌡️ Temperatura (°C)", 0.0,  45.0, float(df["temperatura"].mean()),     step=0.5)
+    umidade    = col_c.number_input("💧 Umidade (%)",       0.0, 100.0, float(df["umidade"].mean()),          step=1.0)
+    temp       = col_d.number_input("🌡️ Temperatura (°C)", 0.0,  45.0, float(df["temperatura"].mean()),      step=0.5)
+    ndwi_input = col_e.number_input("🛰️ NDWI",            -1.0,   1.0, float(df["ndwi"].mean()),             step=0.01)
 
-    # ── Substitua esta função pelo modelo treinado ──────────────────────────
-    def prever_risco(c24, c48, umid, tmp):
+    def prever_risco(c24, c48, umid, tmp, ndwi):
         """
         SUBSTITUIR POR:
             modelo = joblib.load('modelo_rf.pkl')
-            X = pd.DataFrame([[c24, c48, umid, tmp]],
-                              columns=['precipitacao_24h','precipitacao_48h','umidade','temperatura'])
+            X = pd.DataFrame([[c24, c48, umid, tmp, ndwi]],
+                              columns=['precipitacao_24h','precipitacao_48h','umidade','temperatura','ndwi'])
             classe = modelo.predict(X)[0]
             proba  = modelo.predict_proba(X)[0].tolist()
             return classe, proba
@@ -388,19 +594,21 @@ with tab3:
         elif c48 > 25: score += 1
         if umid > 90: score += 2
         elif umid > 80: score += 1
+        if ndwi >= 0.2:  score += 3
+        elif ndwi >= 0.0: score += 1
 
         classes = ["Baixo", "Médio", "Alto", "Crítico"]
-        if score >= 5: idx, proba = 3, [0.05, 0.10, 0.15, 0.70]
-        elif score >= 3: idx, proba = 2, [0.10, 0.20, 0.55, 0.15]
-        elif score >= 1: idx, proba = 1, [0.20, 0.55, 0.20, 0.05]
+        if score >= 6: idx, proba = 3, [0.05, 0.10, 0.15, 0.70]
+        elif score >= 4: idx, proba = 2, [0.10, 0.20, 0.55, 0.15]
+        elif score >= 2: idx, proba = 1, [0.20, 0.55, 0.20, 0.05]
         else:            idx, proba = 0, [0.75, 0.18, 0.05, 0.02]
         return classes[idx], proba
-    # ────────────────────────────────────────────────────────────────────────
 
-    resultado, probabilidades = prever_risco(chuva_24h, chuva_48h, umidade, temp)
-    COR = {"Crítico": "#ef4444", "Alto": "#f97316", "Médio": "#eab308", "Baixo": "#22c55e"}
+    resultado, probabilidades = prever_risco(chuva_24h, chuva_48h, umidade, temp, ndwi_input)
+    COR   = {"Crítico": "#ef4444", "Alto": "#f97316", "Médio": "#eab308", "Baixo": "#22c55e"}
     EMOJI = {"Crítico": "🔴", "Alto": "🟠", "Médio": "🟡", "Baixo": "🟢"}
-    cor = COR[resultado]
+    cor   = COR[resultado]
+    ndwi_classe, ndwi_cor = classificar_ndwi(ndwi_input)
 
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#0d1b2e,#122040); border:2px solid {cor};
@@ -410,7 +618,8 @@ with tab3:
             RISCO {resultado.upper()}
         </div>
         <div style="color:#7fa8cc; margin-top:8px; font-size:0.9rem;">
-            Chuva 24h: {chuva_24h}mm · Chuva 48h: {chuva_48h}mm · Umidade: {umidade:.0f}% · Temp: {temp:.1f}°C
+            Chuva 24h: {chuva_24h}mm · 48h: {chuva_48h}mm · Umidade: {umidade:.0f}% · 
+            Temp: {temp:.1f}°C · NDWI: <span style="color:{ndwi_cor}">{ndwi_input:.3f} ({ndwi_classe})</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -432,22 +641,21 @@ with tab3:
     fig_proba.update_yaxes(gridcolor="#1e2d4a")
     st.plotly_chart(fig_proba, use_container_width=True)
 
-    # Estatísticas dos dados reais como referência
     st.markdown("#### 📊 Valores de Referência do Dataset")
-    col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-    col_r1.metric("Chuva 24h máx",  f"{df['precipitacao_24h'].max():.1f} mm")
-    col_r2.metric("Chuva 48h máx",  f"{df['precipitacao_48h'].max():.1f} mm")
-    col_r3.metric("Umidade máx",    f"{df['umidade'].max():.0f}%")
-    col_r4.metric("Temp mín/máx",   f"{df['temperatura'].min():.1f}/{df['temperatura'].max():.1f}°C")
+    col_r1, col_r2, col_r3, col_r4, col_r5 = st.columns(5)
+    col_r1.metric("Chuva 24h máx", f"{df['precipitacao_24h'].max():.1f} mm")
+    col_r2.metric("Chuva 48h máx", f"{df['precipitacao_48h'].max():.1f} mm")
+    col_r3.metric("Umidade máx",   f"{df['umidade'].max():.0f}%")
+    col_r4.metric("Temp mín/máx",  f"{df['temperatura'].min():.1f}/{df['temperatura'].max():.1f}°C")
+    col_r5.metric("NDWI médio",    f"{df['ndwi'].mean():.4f}")
 
 
 # ══════════════════════════════════════════════
-# TAB 4 — CENTRAL DE ALERTAS
+# TAB 5 — CENTRAL DE ALERTAS
 # ══════════════════════════════════════════════
-with tab4:
+with tab5:
     st.subheader("🚨 Central de Alertas — Grande São Paulo")
 
-    # Últimas ocorrências de risco no período
     df_alertas = df[df["risco"] != "Baixo"].sort_values("data_hora", ascending=False).head(20)
 
     col_esq, col_dir = st.columns([3, 2])
@@ -468,10 +676,12 @@ with tab4:
                 }.get(row["risco"], "✅ Sem ação necessária")
                 cidade_label = row["cidade"].replace("_", " ")
                 dt_str = pd.Timestamp(row["data_hora"]).strftime("%d/%m %H:%M")
+                ndwi_classe, ndwi_cor = classificar_ndwi(row["ndwi"])
                 st.markdown(f"""
                 <div class="alert-card {classe}">
                     <b>{emoji} {cidade_label}</b> &nbsp;<small style="opacity:0.7">{dt_str}</small><br>
                     <small>🌧 24h: {row['precipitacao_24h']:.1f}mm &nbsp;|&nbsp; 💧 {row['umidade']:.0f}% &nbsp;|&nbsp; 🌡 {row['temperatura']:.1f}°C</small><br>
+                    <small>🛰 NDWI: <span style="color:{ndwi_cor}">{row['ndwi']:.3f} ({ndwi_classe})</span></small><br>
                     <small style="opacity:0.8">{acao}</small>
                 </div>
                 """, unsafe_allow_html=True)
