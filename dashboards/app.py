@@ -7,7 +7,16 @@ from plotly.subplots import make_subplots
 import folium
 from streamlit_folium import st_folium
 from datetime import datetime
-from anthropic import Anthropic
+import google.generativeai as genai
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+genai.configure(
+    api_key=os.getenv("GEMINI_API_KEY")
+)
+model = genai.GenerativeModel("gemini-2.5-flash")
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
@@ -16,9 +25,6 @@ st.set_page_config(
     page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="expanded",
-)
-client = Anthropic(
-    api_key=st.secrets["ANTHROPIC_API_KEY"]
 )
 # ─────────────────────────────────────────────
 # ESTILOS
@@ -936,36 +942,29 @@ with tab6:
 
         try:
 
-            resposta = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"""
-Você é o Chatbot do FloodVision.
+            resposta = model.generate_content(
+                f"""
+            Você é o Chatbot do FloodVision.
 
-Especialista em:
+            Especialista em:
 
-- meteorologia
-- enchentes
-- NDWI
-- monitoramento orbital
-- gestão de riscos
+            - meteorologia
+            - enchentes
+            - NDWI
+            - monitoramento orbital
+            - gestão de riscos
 
-Responda SOMENTE usando os dados fornecidos.
+            Responda SOMENTE usando os dados fornecidos.
 
-{contexto}
+            {contexto}
 
-Pergunta:
+            Pergunta:
 
-{pergunta}
-"""
-                    }
-                ]
+            {pergunta}
+            """
             )
 
-            texto = resposta.content[0].text
+            texto = resposta.text
 
         except Exception as e:
 
