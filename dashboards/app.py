@@ -227,14 +227,14 @@ with st.sidebar:
     <div style="background:linear-gradient(135deg,#1a0f00,#001a2a); border:1px solid rgba(255,140,0,0.3);
                 border-radius:10px; padding:12px; text-align:center;">
         <div style="color:#ff9030; font-size:0.8rem; font-weight:700;">📡 DADOS REAIS</div>
-        <div style="color:#7090b0; font-size:0.75rem; margin-top:4px;">INPE via OpenWeather</div>
+        <div style="color:#7090b0; font-size:0.75rem; margin-top:4px;">Open-Meteo API</div>
         <div style="color:#7090b0; font-size:0.72rem;">São Paulo · Guarulhos · Santo André</div>
         <div style="color:#4aa8ff; font-size:0.7rem; margin-top:6px; font-family:'Space Mono',monospace;">
             🛰 NDWI via Satélite
         </div>
     </div>
     """, unsafe_allow_html=True)
-    st.caption("FloodVision v2.0 · FIAP Global Solution 2025")
+    st.caption("FloodVision · FIAP Global Solution 2026")
 
 
 # ─────────────────────────────────────────────
